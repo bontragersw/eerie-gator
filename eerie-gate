@@ -1,0 +1,91 @@
+#!/usr/bin/python
+
+import datetime
+import eerie_gator
+import eerie_gator.client
+import functools
+import logging
+import pytz
+import time
+
+
+def run_once(config_factory, ospi_factory, max_wait):
+    config = config_factory()
+    vcalendar = eerie_gator.get_calendar(config)
+    zone_names = set(config["zones"].keys())
+    vevent = eerie_gator.next_event(vcalendar, zone_names)
+    if vevent is None:
+        logging.debug("No more events in calendar for %r", zone_names)
+        return False
+    next_zone_name = vevent["SUMMARY"]
+    next_station = config["zones"][next_zone_name.lower()]
+    when_start = vevent["DTSTART"].dt
+    now = datetime.datetime.now(tz=pytz.UTC)
+    event_wait = when_start - now
+    logging.debug(
+        "Next event: %s (station %r) at %s (%.1f s)",
+        next_zone_name, next_station + 1, when_start,
+        event_wait.total_seconds(),
+        )
+    if event_wait > max_wait:
+        logging.debug("Next event too distant")
+        return False
+    logging.debug("Wait for %.1f s", event_wait.total_seconds())
+    time.sleep(event_wait.total_seconds())
+    with ospi_factory() as sprinklers:
+        when_stop = vevent["DTEND"].dt
+        water_wait = when_stop - when_start
+        logging.debug("Start %s", next_zone_name)
+        sprinklers.active_station = next_station
+        logging.debug(
+            "Water %s for %.1f s",
+            next_zone_name, water_wait.total_seconds(),
+            )
+        time.sleep(water_wait.total_seconds())
+        sprinklers.active_station = None
+        logging.debug("Stop %s", next_zone_name)
+    return True
+
+
+def main():
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--debug", "-d", action="store_true")
+    parser.add_argument("--config", "-c", nargs="*")
+    parser.add_argument("--gateway", "-g", action="store_true")
+    parser.add_argument("--max-count", "-n", type=int, default=None)
+    parser.add_argument("--no-update-calendar", "-u", action="store_true")
+    parser.add_argument("--max-wait", "-w", type=int, default=3600)
+    args = parser.parse_args()
+    logging.basicConfig(level=logging.DEBUG if args.debug else logging.INFO)
+    get_config = functools.partial(eerie_gator.get_config, args.config)
+    if args.gateway:
+        ospi_factory = functools.partial(
+            eerie_gator.client.EerieGatewayClient,
+            get_config,
+            )
+    else:
+        ospi_factory = eerie_gator.OpenSprinklerPi
+    max_wait = datetime.timedelta(seconds=args.max_wait)
+
+    count = 0
+    while args.max_count is None or count < args.max_count:
+        if not args.no_update_calendar:
+            try:
+                eerie_gator.cache_calendar(get_config())
+            except:
+                logging.exception("Failed to update calendar!")
+
+        if not run_once(get_config, ospi_factory, max_wait):
+            logging.debug(
+                "Waiting for %.1f s to try again",
+                max_wait.total_seconds(),
+                )
+            time.sleep(max_wait.total_seconds())
+
+        if args.max_count is not None:
+            count += 1
+
+
+if __name__ == "__main__":
+    main()

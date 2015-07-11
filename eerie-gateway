@@ -1,0 +1,88 @@
+#!/usr/bin/python
+
+import logging
+import json
+from flask import Flask, request, session, jsonify
+from eerie_gator import get_config, OpenSprinklerPi
+
+app = Flask(__name__)
+sprinklers = None
+
+
+@app.route("/")
+def index():
+    logging.debug("%s / %r", request.method, request.data)
+    try:
+        return """<!DOCTYPE html><script src="//code.jquery.com/jquery-1.11.1.min.js"></script>"""
+    except:
+        logging.exception("%s /", request.method)
+
+
+@app.route("/stations")
+def stations():
+    logging.debug("%s /stations %r", request.method, request.data)
+    try:
+        return jsonify(
+            stations=[name for name in get_config()["zones"]],
+            )
+    except:
+        logging.exception("%s /stations", request.method)
+
+
+@app.route("/active_station", methods=["GET", "PUT", "DELETE"])
+def active_station():
+    global sprinklers
+
+    logging.debug("%s /stations %r", request.method, request.data)
+    try:
+        name_station = get_config()["zones"]
+        station_name = {
+            station: name
+            for (name, station) in name_station.items()
+            }
+        if request.method == "GET":
+            pass
+        elif request.method == "PUT":
+            # In python-flask 0.8 (in the raspbian repo) the Request class
+            # doesn't implement get_json
+            #data = request.get_json(force=True)
+            data = json.loads(request.data)
+            station = data["station"]
+            sprinklers.set_active_station(name_station.get(station, station))
+        elif request.method == "DELETE":
+            sprinklers.set_active_station(None)
+        active_station = sprinklers.get_active_station()
+        return jsonify(
+            station=station_name.get(active_station, active_station),
+            )
+    except:
+        logging.exception("%s /active_station", request.method)
+
+
+def main():
+    global sprinklers
+
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--debug", "-d", action="store_true")
+    parser.add_argument("--log", "-l")
+    parser.add_argument("--port", "-p", type=int)
+    parser.add_argument("--config", "-c", nargs="*")
+    args = parser.parse_args()
+
+    config = get_config(args.config)
+    logging.basicConfig(
+        level=logging.DEBUG if args.debug else logging.INFO,
+        filename=args.log or config["log"],
+        )
+
+    sprinklers = OpenSprinklerPi()
+    with sprinklers:
+        app.run(
+            port=args.port or config["port"],
+            debug=args.debug or config["debug"],
+            )
+
+
+if __name__ == "__main__":
+    main()
