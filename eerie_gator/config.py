@@ -25,6 +25,7 @@ def get_config(filenames=None):
     config["cache"] = os.path.expanduser(parser.get("Google Calendar", "cache"))
     config["max size"] = parser.getint("Google Calendar", "max size")
 
+    config["host"] = parser.get("Gateway", "host")
     config["port"] = parser.getint("Gateway", "port")
     config["debug"] = parser.getboolean("Gateway", "debug")
     config["log"] = parser.get("Gateway", "log")

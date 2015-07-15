@@ -65,7 +65,8 @@ def main():
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--debug", "-d", action="store_true")
-    parser.add_argument("--log", "-l")
+    parser.add_argument("--log-filename", "-f")
+    parser.add_argument("--listen-host", "-l", choices=["0.0.0.0", "127.0.0.1"])
     parser.add_argument("--port", "-p", type=int)
     parser.add_argument("--config", "-c", nargs="*")
     args = parser.parse_args()
@@ -73,12 +74,13 @@ def main():
     config = get_config(args.config)
     logging.basicConfig(
         level=logging.DEBUG if args.debug else logging.INFO,
-        filename=args.log or config["log"],
+        filename=args.log_filename or config["log"],
         )
 
     sprinklers = OpenSprinklerPi()
     with sprinklers:
         app.run(
+            host=args.listen_host or config["host"],
             port=args.port or config["port"],
             debug=args.debug or config["debug"],
             )
