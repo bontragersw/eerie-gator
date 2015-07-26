@@ -35,5 +35,3 @@ class EerieGatewayClient:
         response = urlopen(request)
         status = response.getcode()
         assert status == 200, status
-
-    active_station = property(get_active_station, set_active_station)

@@ -36,13 +36,13 @@ def run_once(config_factory, ospi_factory, max_wait):
         when_stop = vevent["DTEND"].dt
         water_wait = when_stop - when_start
         logging.debug("Start %s", next_zone_name)
-        sprinklers.active_station = next_station
+        sprinklers.set_active_station(next_station)
         logging.debug(
             "Water %s for %.1f s",
             next_zone_name, water_wait.total_seconds(),
             )
         time.sleep(water_wait.total_seconds())
-        sprinklers.active_station = None
+        sprinklers.set_active_station(None)
         logging.debug("Stop %s", next_zone_name)
     return True
 
@@ -56,6 +56,7 @@ def main():
     parser.add_argument("--max-count", "-n", type=int, default=None)
     parser.add_argument("--no-update-calendar", "-u", action="store_true")
     parser.add_argument("--max-wait", "-w", type=int, default=3600)
+    parser.add_argument("--activate-station", "-a", nargs="+")
     args = parser.parse_args()
     logging.basicConfig(level=logging.DEBUG if args.debug else logging.INFO)
     get_config = functools.partial(eerie_gator.get_config, args.config)
@@ -65,8 +66,27 @@ def main():
             get_config,
             )
     else:
+        # TODO: verify that user has write permissions to /dev/mem for RPi.GPIO
         ospi_factory = eerie_gator.OpenSprinklerPi
     max_wait = datetime.timedelta(seconds=args.max_wait)
+
+    if args.activate_station is not None:
+        assert len(args.activate_station) % 2 == 0, "Specify pairs of station name and duration"
+        config = get_config()
+        for i in range(0, len(args.activate_station), 2):
+            zone_name = args.activate_station[i]
+            duration_s = float(args.activate_station[i+1])
+            station = config["zones"][zone_name.lower()]
+            with ospi_factory() as sprinklers:
+                logging.debug("Manually start %s", zone_name)
+                sprinklers.set_active_station(station)
+                logging.debug(
+                    "Water %s for %.1f s",
+                    zone_name, duration_s,
+                    )
+                time.sleep(duration_s)
+                logging.debug("Stop %s", zone_name)
+                sprinklers.set_active_station(None)
 
     count = 0
     while args.max_count is None or count < args.max_count:
